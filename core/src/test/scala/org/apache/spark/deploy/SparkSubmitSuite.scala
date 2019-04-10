@@ -195,7 +195,7 @@ class SparkSubmitSuite
       "--name", "myApp",
       "--class", "Foo",
       "--num-executors", "0",
-      "--conf", "spark.dynamicAllocation.enabled=true",
+      "--conf", s"${DYN_ALLOCATION_ENABLED.key}=true",
       "thejar.jar")
     new SparkSubmitArguments(clArgs1)
 
@@ -203,7 +203,7 @@ class SparkSubmitSuite
       "--name", "myApp",
       "--class", "Foo",
       "--num-executors", "0",
-      "--conf", "spark.dynamicAllocation.enabled=false",
+      "--conf", s"${DYN_ALLOCATION_ENABLED.key}=false",
       "thejar.jar")
 
     val e = intercept[SparkException](new SparkSubmitArguments(clArgs2))
@@ -479,11 +479,29 @@ class SparkSubmitSuite
     val appArgs1 = new SparkSubmitArguments(clArgs1)
     val (_, _, conf1, _) = submit.prepareSubmitEnvironment(appArgs1)
     conf1.get(UI_SHOW_CONSOLE_PROGRESS) should be (true)
+    var sc1: SparkContext = null
+    try {
+      sc1 = new SparkContext(conf1)
+      assert(sc1.progressBar.isDefined)
+    } finally {
+      if (sc1 != null) {
+        sc1.stop()
+      }
+    }
 
     val clArgs2 = Seq("--class", "org.SomeClass", "thejar.jar")
     val appArgs2 = new SparkSubmitArguments(clArgs2)
     val (_, _, conf2, _) = submit.prepareSubmitEnvironment(appArgs2)
     assert(!conf2.contains(UI_SHOW_CONSOLE_PROGRESS))
+    var sc2: SparkContext = null
+    try {
+      sc2 = new SparkContext(conf2)
+      assert(!sc2.progressBar.isDefined)
+    } finally {
+      if (sc2 != null) {
+        sc2.stop()
+      }
+    }
   }
 
   test("launch simple application with spark-submit") {
@@ -663,7 +681,7 @@ class SparkSubmitSuite
       appArgs.jars should be(Utils.resolveURIs(jars))
       appArgs.files should be(Utils.resolveURIs(files))
       conf.get(JARS) should be(Utils.resolveURIs(jars + ",thejar.jar").split(",").toSeq)
-      conf.get("spark.files") should be(Utils.resolveURIs(files))
+      conf.get(FILES) should be(Utils.resolveURIs(files).split(",").toSeq)
 
       // Test files and archives (Yarn)
       val clArgs2 = Seq(
@@ -1220,6 +1238,23 @@ class SparkSubmitSuite
     }
 
     conf.get(nonDelimSpaceFromFile._1) should be ("blah")
+  }
+
+  test("get a Spark configuration from arguments") {
+    val testConf = "spark.test.hello" -> "world"
+    val masterConf = "spark.master" -> "yarn"
+    val clArgs = Seq(
+      "--conf", s"${testConf._1}=${testConf._2}",
+      "--conf", s"${masterConf._1}=${masterConf._2}",
+      "--class", "Foo",
+      "app.jar")
+    val conf = new SparkSubmitArguments(clArgs).toSparkConf()
+     Seq(
+       testConf,
+       masterConf
+     ).foreach { case (k, v) =>
+       conf.get(k) should be (v)
+     }
   }
 }
 

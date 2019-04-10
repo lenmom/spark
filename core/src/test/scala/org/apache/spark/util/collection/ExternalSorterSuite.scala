@@ -17,8 +17,6 @@
 
 package org.apache.spark.util.collection
 
-import java.util.Comparator
-
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
 
@@ -111,14 +109,9 @@ class ExternalSorterSuite extends SparkFunSuite with LocalSparkContext {
     val tmp = new Array[Long](size/2)
     val tmpBuf = new LongArray(MemoryBlock.fromLongArray(tmp))
 
-    new Sorter(new UnsafeSortDataFormat(tmpBuf)).sort(
-      buf, 0, size, new Comparator[RecordPointerAndKeyPrefix] {
-        override def compare(
-            r1: RecordPointerAndKeyPrefix,
-            r2: RecordPointerAndKeyPrefix): Int = {
-          PrefixComparators.LONG.compare(r1.keyPrefix, r2.keyPrefix)
-        }
-      })
+    new Sorter(new UnsafeSortDataFormat(tmpBuf)).sort(buf, 0, size,
+      (r1: RecordPointerAndKeyPrefix, r2: RecordPointerAndKeyPrefix) =>
+        PrefixComparators.LONG.compare(r1.keyPrefix, r2.keyPrefix))
   }
 
   test("spilling with hash collisions") {
@@ -135,7 +128,7 @@ class ExternalSorterSuite extends SparkFunSuite with LocalSparkContext {
         buffer2: ArrayBuffer[String]): ArrayBuffer[String] = buffer1 ++= buffer2
 
     val agg = new Aggregator[String, String, ArrayBuffer[String]](
-      createCombiner _, mergeValue _, mergeCombiners _)
+      createCombiner, mergeValue, mergeCombiners)
 
     val sorter = new ExternalSorter[String, String, ArrayBuffer[String]](
       context, Some(agg), None, None)
@@ -639,7 +632,7 @@ class ExternalSorterSuite extends SparkFunSuite with LocalSparkContext {
 
   test("force to spill for external sorter") {
     val conf = createSparkConf(loadDefaults = false, kryo = false)
-      .set("spark.memory.storageFraction", "0.999")
+      .set(MEMORY_STORAGE_FRACTION, 0.999)
       .set(TEST_MEMORY, 471859200L)
       .set(SHUFFLE_SORT_BYPASS_MERGE_THRESHOLD, 0)
     sc = new SparkContext("local", "test", conf)

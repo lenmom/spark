@@ -423,7 +423,7 @@ class SparkContextSuite extends SparkFunSuite with LocalSparkContext with Eventu
   test("No exception when both num-executors and dynamic allocation set.") {
     noException should be thrownBy {
       sc = new SparkContext(new SparkConf().setAppName("test").setMaster("local")
-        .set("spark.dynamicAllocation.enabled", "true").set("spark.executor.instances", "6"))
+        .set(DYN_ALLOCATION_ENABLED, true).set("spark.executor.instances", "6"))
       assert(sc.executorAllocationManager.isEmpty)
       assert(sc.getConf.getInt("spark.executor.instances", 0) === 6)
     }
@@ -708,6 +708,27 @@ class SparkContextSuite extends SparkFunSuite with LocalSparkContext with Eventu
       assert(runningTaskIds != null)
       // Verify there is no running task.
       assert(runningTaskIds.isEmpty)
+    }
+  }
+
+  test(s"Avoid setting ${CPUS_PER_TASK.key} unreasonably (SPARK-27192)") {
+    val FAIL_REASON = s"${CPUS_PER_TASK.key} must be <="
+    Seq(
+      ("local", 2, None),
+      ("local[2]", 3, None),
+      ("local[2, 1]", 3, None),
+      ("spark://test-spark-cluster", 2, Option(1)),
+      ("local-cluster[1, 1, 1000]", 2, Option(1)),
+      ("yarn", 2, Option(1))
+    ).foreach { case (master, cpusPerTask, executorCores) =>
+      val conf = new SparkConf()
+      conf.set(CPUS_PER_TASK, cpusPerTask)
+      executorCores.map(executorCores => conf.set(EXECUTOR_CORES, executorCores))
+      val ex = intercept[SparkException] {
+        sc = new SparkContext(master, "test", conf)
+      }
+      assert(ex.getMessage.contains(FAIL_REASON))
+      resetSparkContext()
     }
   }
 }
